@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Gesture Controlled Cursor</title>
+    <style>
+    body {
+        margin: 0;
+        overflow: hidden;
+        font-family: 'Segoe UI', sans-serif;
+        background: linear-gradient(to right, #0f2027, #203a43, #2c5364);
+    }
+    canvas, video {
+        position: absolute;
+        top: 0;
+        left: 0;
+    }
+    #cursor {
+        position: absolute;
+        width: 20px;
+        height: 20px;
+        background: lime;
+        border-radius: 50%;
+        pointer-events: none;
+        transform: translate(-50%, -50%);
+        z-index: 999;
+    }
+    #click-indicator {
+        position: absolute;
+        top: 10px;
+        left: 10px;
+        color: white;
+        font-size: 1.5rem;
+        background: rgba(0, 0, 0, 0.5);
+        padding: 5px 10px;
+        border-radius: 5px;
+        z-index: 1000;
+    }
+</style>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.min.js"></script>
+</head>
+<body>
+    <video id="input_video" style="display:none;"></video>
+    <canvas id="output_canvas" width="1280" height="720"></canvas>
+    <div id="cursor"></div>
+    <div id="click-indicator">Waiting for gesture...</div>
+
+    <script> 
+    const videoElement = document.getElementById('input_video');
+    const canvasElement = document.getElementById('output_canvas');
+    const canvasCtx = canvasElement.getContext('2d');
+    const cursor = document.getElementById('cursor');
+    const clickIndicator = document.getElementById('click-indicator');
+
+    let lastClickTime = 0;
+    let lastVolumeChange = 0;
+
+    const hands = new Hands({
+        locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
+    });
+
+    hands.setOptions({
+        maxNumHands: 1,
+        modelComplexity: 1,
+        minDetectionConfidence: 0.7,
+        minTrackingConfidence: 0.5
+    });
+
+    hands.onResults((results) => {
+        canvasCtx.save();
+        canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+        canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
+
+        if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+        const landmarks = results.multiHandLandmarks[0];
+        drawConnectors(canvasCtx, landmarks, HAND_CONNECTIONS, { color: '#00ffff', lineWidth: 2 });
+        drawLandmarks(canvasCtx, landmarks, { color: '#ff00ff', lineWidth: 1 });
+
+        const indexTip = landmarks[8];
+        const thumbTip = landmarks[4];
+
+        const x = indexTip.x * window.innerWidth;
+        const y = indexTip.y * window.innerHeight;
+
+        cursor.style.left = `${x}px`;
+        cursor.style.top = `${y}px`;
+
+        const dx = (indexTip.x - thumbTip.x) * window.innerWidth;
+        const dy = (indexTip.y - thumbTip.y) * window.innerHeight;
+        const distance = Math.sqrt(dx * dx + dy * dy);
+
+        if (distance < 40 && Date.now() - lastClickTime > 1000) {
+            clickIndicator.textContent = 'Click Gesture Detected!';
+            lastClickTime = Date.now();
+        } else if (distance >= 40) {
+        clickIndicator.textContent = 'Move your hand to interact...';
+        }
+
+        const indexY = indexTip.y;
+        const baseY = landmarks[6].y;
+
+        if (indexY < baseY - 0.1 && Date.now() - lastVolumeChange > 1000) {
+            clickIndicator.textContent = 'Volume Up Gesture';
+            lastVolumeChange = Date.now();
+        } else if (indexY > baseY + 0.1 && Date.now() - lastVolumeChange > 1000) {
+            clickIndicator.textContent = 'Volume Down Gesture';
+            lastVolumeChange = Date.now();
+        }
+    }
+
+        canvasCtx.restore();
+    });
+
+    const camera = new Camera(videoElement, {
+        onFrame: async () => {
+        await hands.send({ image: videoElement });
+    },
+        width: 1280,
+        height: 720
+    });
+    camera.start();
+</script>
+</body>
+</html>
